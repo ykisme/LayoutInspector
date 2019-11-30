@@ -3,23 +3,32 @@ package yk.layout_inspector;
 import com.android.ddmlib.AndroidDebugBridge;
 import com.android.ddmlib.Client;
 import com.android.ddmlib.IDevice;
+import com.android.layoutinspector.LayoutInspectorBridge;
+import com.android.layoutinspector.LayoutInspectorCaptureOptions;
+import com.android.layoutinspector.LayoutInspectorResult;
+import com.android.layoutinspector.ProtocolVersion;
+import com.android.layoutinspector.model.ClientWindow;
+import com.android.sdklib.AndroidVersion;
 
 import java.io.IOException;
+import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Scanner;
 import java.util.concurrent.TimeUnit;
 
 public class Main {
     public static final String ADB_PATH =
-            "C:\\Users\\yk\\AppData\\Local\\Android\\Sdk\\platform-tools\\adb.exe";
+            "/home/wudi/bin/android-sdk/platform-tools/adb";
+    private static final boolean LAYOUT_INSPECTOR_V2_PROTOCOL_ENABLED = false;
 
     public static void exitWithError() {
         System.exit(-1);
     }
 
-    public static IDevice getDevice() {
+    public static IDevice getDevice(String adbPath) {
         AndroidDebugBridge.init(true);
-        AndroidDebugBridge bridge = AndroidDebugBridge.createBridge(ADB_PATH, false);
+        AndroidDebugBridge bridge = AndroidDebugBridge.createBridge(adbPath, false);
         if (!waitForDevice(bridge, 5)) {
             System.out.println("no devices connected.");
             return null;
@@ -31,42 +40,59 @@ public class Main {
         return devices[0];
     }
 
+    static ProtocolVersion determineProtocolVersion(int apiVersion, boolean v2Enabled) {
+        return apiVersion >= LayoutInspectorBridge.getV2_MIN_API() && v2Enabled ? ProtocolVersion.Version2 : ProtocolVersion.Version1;
+    }
+
     public static void main(String[] args) {
-        IDevice device = getDevice();
-        System.out.println(device.getAvdName());
-        Client client = device.getClient("com.android.systemui");
+        System.out.println("命令参数为adb全路径 程序名，比如: /bin/adb com.android.systemui");
+        if (args == null || args.length < 2) {
+            System.out.println("必须输入adb路径和程序名");
+            exitWithError();
+        }
+        IDevice device = getDevice(args[0]);
+        System.out.println(device.getName());
+        String appName = args[1];
+        Client client = device.getClient(appName);
         if (client == null) {
-            System.out.println("client == null");
+            System.out.println("程序名错误");
             exitWithError();
             return;
         }
-        ListViewRootsHandler listViewRootsHandler = new ListViewRootsHandler();
         try {
-            List<String> windows = listViewRootsHandler.getWindows(client, 20, TimeUnit.SECONDS);
+            List<ClientWindow> windows = ClientWindow.getAll(client, 20, TimeUnit.SECONDS);
             if (windows.size() == 0) {
-                System.out.println("window is null or none");
+                System.out.println("没有window");
                 exitWithError();
                 return;
             }
             for (int i = 0; i < windows.size(); i++) {
-                System.out.println(i + ":" + windows.get(i));
+                ClientWindow clientWindow = windows.get(i);
+                System.out.println(i + ":" + clientWindow.getDisplayName());
             }
             Scanner scanner = new Scanner(System.in);
             int i = scanner.nextInt();
             if (i < 0 || i > windows.size() - 1) {
-                System.out.println("select error");
+                System.out.println("选择范围错误");
                 exitWithError();
                 return;
             }
-            String window = windows.get(i);
-            byte[] bytes = ViewDumpHandler.dumpViewHierarchy(client, window, 60);
+            ClientWindow window = windows.get(i);
+            LayoutInspectorCaptureOptions options = new LayoutInspectorCaptureOptions();
+            options.setTitle(window.getDisplayName());
+            ProtocolVersion version =
+                    determineProtocolVersion(client.getDevice().getVersion().getApiLevel(), LAYOUT_INSPECTOR_V2_PROTOCOL_ENABLED);
+            options.setVersion(
+                    version);
+            LayoutInspectorResult result = LayoutInspectorBridge.captureView(window, options);
+            byte[] bytes = result.getData();
             if (bytes != null) {
-                IOUtil.saveBytes("view.li", bytes);
+                IOUtil.saveBytes(appName+"_"+System.currentTimeMillis()+".li", bytes);
                 System.out.println("save ok");
+                System.exit(0);
             } else {
                 System.out.println("dump view error");
                 exitWithError();
-                return;
             }
         } catch (IOException e) {
             e.printStackTrace();
