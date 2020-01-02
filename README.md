@@ -9,3 +9,5 @@ java -jar ~/bin/LayoutInspector.jar ~/bin/android-sdk/platform-tools/adb com.and
 第一个参数是jar的路径，第二个参数是adb工具的路径（我这里是ubuntu，windows下应该是xxx/adb.exe），第三个参数是包名。
 
 请注意执行命令时不可有其他adb正在连接设备，建议关闭AndroidStudio，命令执行成功后会列出对应包当前所有的Window，输入序号就会开始获取布局文件。生成的li文件跟Android Studio生成的li文件相同，使用Android Studio就能打开。
+
+为方便使用，我添加了一个已经生成的Jar在jar目录，可直接使用。
